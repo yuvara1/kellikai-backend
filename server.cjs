@@ -7,7 +7,7 @@ const fs = require('fs');
 
 
 const app = express();
-const port = process.env.PORT|| 3000;
+const port = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
@@ -67,15 +67,14 @@ app.get('/', async (req, res) => {
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
           const { name, email, password } = req.body;
-          const user_photo = req.file ? `http://localhost:${port}/uploads/` + req.file.filename : null; // Get the uploaded file name
+          const user_photo = req.file ? `https://kellikai-backend.onrender.com/uploads/` + req.file.filename : null; // Get the uploaded file name
 
-          const hashedPassword = await bcrypt.hash(password, 10);
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
           if (rows.length === 0) {
                const [insert] = await db.query(
                     'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-                    [name, email, hashedPassword, user_photo]
+                    [name, email, password, user_photo]
                );
                if (insert.affectedRows === 0) {
                     res.status(400).send('Failed to register user');
@@ -113,7 +112,7 @@ app.post('/login', async (req, res) => {
                name: user.name,
                email: user.email,
                user_photo: user.user_photo
-                    ? user.user_photo : `http://localhost:${port}/uploads/${user.user_photo}`
+                    ? user.user_photo : `https://kellikai-backend.onrender.com/uploads/${user.user_photo}`
           });
      } catch (err) {
           console.error('Error during login:', err);
@@ -175,7 +174,7 @@ app.post('/facebooklogin', async (req, res) => {
 app.post('/uploadpost', upload.single('image'), async (req, res) => {
      try {
           const { name, caption } = req.body;
-          const image = `http://localhost:${port}/uploads/${req.file.filename}`; // Get the uploaded file name 
+          const image = `https://kellikai-backend.onrender.com/uploads/${req.file.filename}`; // Get the uploaded file name 
           console.log('Image file:', image); // Log the image file name    
           const query = 'INSERT INTO post (name, img, caption) VALUES (?, ?, ?)';
           const [rows] = await db.query(query, [name, image, caption]);
@@ -201,7 +200,7 @@ app.get('/getallusers', async (req, res) => {
                id: row.id,
                name: row.name,
                user_photo: row.user_photo
-                    ? row.user_photo : `http://localhost:${port}/uploads/${row.user_photo}`,
+                    ? row.user_photo : `https://kellikai-backend.onrender.com/uploads/${row.user_photo}`,
 
           }));
 
@@ -232,7 +231,7 @@ app.get('/profilePic', async (req, res) => {
           const name = req.query.name;
           const [rows] = await db.query('SELECT user_photo FROM users WHERE name = ?', [name]);
           if (rows.length > 0) {
-               const userPhoto = rows[0].user_photo ? rows[0].user_photo : `http://localhost:${port}/uploads/${rows[0].user_photo}`;
+               const userPhoto = rows[0].user_photo ? rows[0].user_photo : `https://kellikai-backend.onrender.com/uploads/${rows[0].user_photo}`;
                res.send(userPhoto);
           } else {
                res.status(404).send('User not found');
