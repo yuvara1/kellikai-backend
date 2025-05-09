@@ -214,7 +214,7 @@ app.get('/getallusers', async (req, res) => {
 // Serve uploaded files
 app.get('/uploads/:filename', (req, res) => {
      const { filename } = req.params;
-     const filePath = path.join(__dirname, 'uploads', filename);
+     const filePath = filename;
      console.log('File path:', filePath); // Log the file path for debugging
      fs.readFile(filePath, (err, data) => {
           if (err) {
