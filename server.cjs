@@ -68,7 +68,7 @@ app.get('/', async (req, res) => {
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
           const { name, email, password } = req.body;
-          const user_photo = req.file ? `http:localhost:3000/uploads/` + req.file.filename : null; // Get the uploaded file name
+          const user_photo = req.file ? `https://kellikai.onrender.com/uploads/` + req.file.filename : null; // Get the uploaded file name
 
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
@@ -113,7 +113,7 @@ app.post('/login', async (req, res) => {
                name: user.name,
                email: user.email,
                user_photo: user.user_photo
-                    ? user.user_photo : `http:localhost:300/uploads/${user.user_photo}`
+                    ? user.user_photo : `https://kellikai.onrender.com/uploads/${user.user_photo}`
           });
      } catch (err) {
           console.error('Error during login:', err);
@@ -204,7 +204,7 @@ app.get('/getallusers', async (req, res) => {
                id: row.id,
                name: row.name,
                user_photo: row.user_photo
-                    ? row.user_photo : `http:localhost:300/uploads/${row.user_photo}`,
+                    ? row.user_photo : `https://kellikai.onrender.com/uploads/${row.user_photo}`,
 
           }));
 
@@ -235,7 +235,7 @@ app.get('/profilePic', async (req, res) => {
           const name = req.query.name;
           const [rows] = await db.query('SELECT user_photo FROM users WHERE name = ?', [name]);
           if (rows.length > 0) {
-               const userPhoto = rows[0].user_photo ? rows[0].user_photo : `http:localhost:300/uploads/${rows[0].user_photo}`;
+               const userPhoto = rows[0].user_photo ? rows[0].user_photo : `https://kellikai.onrender.com/uploads/${rows[0].user_photo}`;
                res.send(userPhoto);
           } else {
                res.status(404).send('User not found');
