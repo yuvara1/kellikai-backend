@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "host": "vite --host",
-    "start": "node server.cjs"
+    "start": "nodemon server.cjs"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
