@@ -9,7 +9,13 @@ const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+const corsOptions = {
+     origin: ['http://localhost:5173', 'https://kellikai.onrender.com','https://kellikai.web.app'], // Allow specific origins
+     methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allow specific HTTP methods
+     allowedHeaders: ['Content-Type', 'Authorization'], // Allow specific headers
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const db = mysql.createPool({
@@ -214,7 +220,7 @@ app.get('/getallusers', async (req, res) => {
 // Serve uploaded files
 app.get('/uploads/:filename', (req, res) => {
      const { filename } = req.params;
-     const filePath = `http://localhost:3000/uploads/`+filename;
+     const filePath = `http://localhost:3000/uploads/` + filename;
      console.log('File path:', filePath); // Log the file path for debugging
      fs.readFile(filePath, (err, data) => {
           if (err) {
