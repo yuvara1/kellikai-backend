@@ -4,9 +4,21 @@ const mysql = require('mysql2/promise');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const dotenv = require('dotenv');
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Middleware
+const server = import.meta.env.SERVER;
+if (server === 'true') {
+     app.use((req, res, next) => {
+          res.header('Access-Control-Allow-Origin', '*');
+          res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+          next();
+     });
+}
 
 app.use(cors({
      origin: ['http://localhost:5173', 'https://kellikai.web.app', 'https://kellikai.onrender.com'],
