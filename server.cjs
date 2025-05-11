@@ -14,12 +14,11 @@ app.use(cors());
 app.use(express.json());
 
 const db = mysql.createPool({
-     host: 'kellikai-03-kellikai-03.h.aivencloud.com',
+     host: 'kellikai-kellikai-03.h.aivencloud.com',
      user: 'avnadmin',
      port: 26379,
-     password: 'AVNS_RLdK5kJ2UBDb4vsLWYa',
+     password: 'AVNS_ozuBjgKP467azZQD6Y9',
      database: 'kellikai',
-     connectionLimit: 10,
 });
 
 db.getConnection()
@@ -67,6 +66,7 @@ app.get('/', async (req, res) => {
 // User registration
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
+          console.log("Register request"+req.body);
           const { name, email, password } = req.body;
           const user_photo = req.file ? `https://kellikai.onrender.com/uploads/` + req.file.filename : null; // Get the uploaded file name
 
@@ -95,7 +95,7 @@ app.post('/register', upload.single('user_photo'), async (req, res) => {
 app.post('/login', async (req, res) => {
      try {
           const { email, password } = req.body;
-
+          console.log('Login request body:', req.body); // Log the request body for debugging
           // Check if the user exists
           const [rows] = await db.query('SELECT * FROM users WHERE name = ? or email = ?', [email, email]);
           if (rows.length === 0) {
@@ -151,6 +151,7 @@ app.post('/googlelogin', async (req, res) => {
 // Facebook login
 app.post('/facebooklogin', async (req, res) => {
      try {
+          console.log('Facebook login request body:', req.body); // Log the request body for debugging
           const { name, email, photo } = req.body;
           const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
           if (rows.length === 0) {
@@ -198,6 +199,7 @@ app.post('/uploadpost', upload.single('image'), async (req, res) => {
 // Get all users
 app.get('/getallusers', async (req, res) => {
      try {
+          console.log('Request query:', req.query); // Log the request query for debugging
           const name = req.query.name;
           const [rows] = await db.query('SELECT id,name, user_photo FROM users WHERE name != ?', [name]);
 
