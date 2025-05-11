@@ -179,6 +179,7 @@ app.post('/uploadpost', upload.single('image'), async (req, res) => {
           console.log('Uploaded file:', req.file.filename); // Log the uploaded file for debugging
           const { name, caption } = req.body;
           const image = `https://kellikai.onrender.com/uploads/${req.file.filename}`; // Get the uploaded file name 
+          console.log('Image URL:', image); // Log the image URL for debugging
           console.log('Image file:', image); // Log the image file name    
           const query = 'INSERT INTO post (name, img, caption) VALUES (?, ?, ?)';
           const [rows] = await db.query(query, [name, image, caption]);
