@@ -219,7 +219,7 @@ app.get('/getallusers', async (req, res) => {
 // Serve uploaded files
 app.get('/uploads/:filename', (req, res) => {
      const { filename } = req.params;
-     const filePath =  filename;
+     const filePath =  `https://kellikai.onrender.com/uploads/`+filename;
      console.log('File path:', filePath); // Log the file path for debugging
      fs.readFile(filePath, (err, data) => {
           if (err) {
@@ -238,6 +238,7 @@ app.get('/profilePic', async (req, res) => {
           if (rows.length > 0) {
                const userPhoto = rows[0].user_photo ? rows[0].user_photo : `https://kellikai.onrender.com/uploads/${rows[0].user_photo}`;
                res.send(userPhoto);
+               console.log('User photo URL:', userPhoto); // Log the user photo URL for debugging
           } else {
                res.status(404).send('User not found');
           }
