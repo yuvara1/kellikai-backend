@@ -66,8 +66,14 @@ app.get('/', async (req, res) => {
 // User registration
 app.post('/register', upload.single('user_photo'), async (req, res) => {
   try {
-    console.log("Register request", req.body);
+    console.log('Register request body:', req.body);
+    console.log('Uploaded file:', req.file);
+
     const { name, email, password } = req.body;
+    if (!name || !email || !password || !req.file) {
+      return res.status(400).send('Missing required fields');
+    }
+
     const user_photo = req.file.filename;
 
     // Check if user already exists
@@ -76,13 +82,10 @@ app.post('/register', upload.single('user_photo'), async (req, res) => {
       return res.status(409).send('User already exists');
     }
 
-    // Hash the password
-
-
     // Insert new user
     const [insert] = await db.query(
       'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-      [name, email, hashedPassword, user_photo]
+      [name, email, password, user_photo]
     );
 
     if (insert.affectedRows === 0) {
@@ -91,7 +94,7 @@ app.post('/register', upload.single('user_photo'), async (req, res) => {
 
     res.send('User registered successfully');
   } catch (err) {
-    console.error(err);
+    console.error('Error during registration:', err);
     res.status(500).send('Error registering user');
   }
 });
