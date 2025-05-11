@@ -403,29 +403,49 @@ app.post('/followuser', async (req, res) => {
 });
 
 app.post('/likepost', async (req, res) => {
-     try {
-          const { post_id } = req.body;
+    try {
+        const { post_id, user_id } = req.body;
 
-          if (!post_id) {
-               return res.status(400).send('Post ID is required');
-          }
+        if (!post_id || !user_id) {
+            return res.status(400).send('Post ID and User ID are required');
+        }
 
-          const [result] = await db.query(
-               'UPDATE post SET likes = likes + 1 WHERE id = ?',
-               [post_id]
-          );
+        // Check if the user has already liked the post
+        const [existingLike] = await db.query(
+            'SELECT * FROM post_likes WHERE post_id = ? AND user_id = ?',
+            [post_id, user_id]
+        );
 
-          if (result.affectedRows === 0) {
-               return res.status(404).send('Post not found');
-          }
+        if (existingLike.length > 0) {
+            return res.status(409).send('User has already liked this post');
+        }
 
-          res.send('Post liked successfully');
-     } catch (err) {
-          console.error('Error liking post:', err);
-          res.status(500).send('Error liking post');
-     }
+        // Insert the like into the post_likes table
+        const [likeResult] = await db.query(
+            'INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)',
+            [post_id, user_id]
+        );
+
+        if (likeResult.affectedRows === 0) {
+            return res.status(400).send('Failed to like the post');
+        }
+
+        // Increment the likes count in the post table
+        const [updateResult] = await db.query(
+            'UPDATE post SET likes = likes + 1 WHERE id = ?',
+            [post_id]
+        );
+
+        if (updateResult.affectedRows === 0) {
+            return res.status(404).send('Post not found');
+        }
+
+        res.send('Post liked successfully');
+    } catch (err) {
+        console.error('Error liking post:', err);
+        res.status(500).send('Error liking post');
+    }
 });
-
 app.listen(port, () => {
      console.log(`Server is running on port ${port}`);
 });
