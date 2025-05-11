@@ -126,7 +126,7 @@ app.post('/login', async (req, res) => {
                email: user.email,
                user_photo: user.user_photo
                     ? user.user_photo
-                    : `${req.protocol}://${req.get('host')}/uploads/${user.user_photo}`,
+                    : `https://kellikai.onrender.com/uploads/${user.user_photo}`,
           });
      } catch (err) {
           console.error('Error during login:', err);
@@ -140,9 +140,7 @@ app.post('/googlelogin', async (req, res) => {
           console.log('Google login request body:', req.body);
           const { name, email, photo } = req.body;
 
-          const user_photo = photo.startsWith('/uploads/')
-               ? `${req.protocol}://${req.get('host')}${photo}`
-               : photo;
+          const user_photo = photo
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
           if (rows.length === 0) {
@@ -170,9 +168,7 @@ app.post('/facebooklogin', async (req, res) => {
           console.log('Facebook login request body:', req.body);
           const { name, email, photo } = req.body;
 
-          const user_photo = photo.startsWith('/uploads/')
-               ? `${req.protocol}://${req.get('host')}${photo}`
-               : photo;
+          const user_photo = photo;
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
           if (rows.length === 0) {
@@ -200,7 +196,7 @@ app.post('/uploadpost', upload.single('image'), async (req, res) => {
           console.log('Request body:', req.body);
           console.log('Uploaded file:', req.file.filename);
           const { name, caption } = req.body;
-          const image = `http://localhost:3000/uploads/${req.file.filename}`;
+          const image = `https://kellikai.onrender.com/uploads/${req.file.filename}`;
           console.log('Image URL:', image);
           console.log('Image file:', image);
           const query = 'INSERT INTO post (name, img, caption) VALUES (?, ?, ?)';
@@ -227,9 +223,7 @@ app.get('/getallusers', async (req, res) => {
           const users = rows.map((row) => ({
                id: row.id,
                name: row.name,
-               user_photo: row.user_photo.startsWith('/uploads/')
-                    ? `${req.protocol}://${req.get('host')}${row.user_photo}`
-                    : `${req.protocol}://${req.get('host')}/uploads/${row.user_photo}`,
+               user_photo: row.user_photo,
           }));
 
           res.send(users);
@@ -242,7 +236,7 @@ app.get('/getallusers', async (req, res) => {
 // Serve uploaded files
 app.get('/uploads/:filename', (req, res) => {
      const { filename } = req.params;
-     const filePath = `http://localhost:3000/uploads/` + filename;
+     const filePath = `https://kellikai.onrender.com/uploads/` + filename;
      console.log('File path:', filePath);
      fs.readFile(filePath, (err, data) => {
           if (err) {
@@ -259,9 +253,7 @@ app.get('/profilePic', async (req, res) => {
           const name = req.query.name;
           const [rows] = await db.query('SELECT user_photo FROM users WHERE name = ?', [name]);
           if (rows.length > 0) {
-               const userPhoto = rows[0].user_photo.startsWith('/uploads/')
-                    ? `${req.protocol}://${req.get('host')}${rows[0].user_photo}`
-                    : `${req.protocol}://${req.get('host')}/uploads/${rows[0].user_photo}`;
+               const userPhoto = rows[0].user_photo;
                res.send(userPhoto);
                console.log('User photo URL:', userPhoto);
           } else {
