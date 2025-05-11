@@ -65,32 +65,36 @@ app.get('/', async (req, res) => {
 
 // User registration
 app.post('/register', upload.single('user_photo'), async (req, res) => {
-     try {
-          console.log("Register request"+req.body);
-          const { name, email, password } = req.body;
-          const user_photo = req.file ? `https://kellikai.onrender.com/uploads/` + req.file.filename : null; // Get the uploaded file name
+  try {
+    console.log("Register request", req.body);
+    const { name, email, password } = req.body;
+    const user_photo = req.file.filename;
+
+    // Check if user already exists
+    const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
+    if (rows.length > 0) {
+      return res.status(409).send('User already exists');
+    }
+
+    // Hash the password
 
 
-          const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
-          if (rows.length === 0) {
-               const [insert] = await db.query(
-                    'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-                    [name, email, password, user_photo]
-               );
-               if (insert.affectedRows === 0) {
-                    res.status(400).send('Failed to register user');
-               } else {
-                    res.send('User registered successfully');
-               }
-          } else {
-               res.status(409).send('User already exists');
-          }
-     } catch (err) {
-          console.error(err);
-          res.status(500).send('Error registering user');
-     }
+    // Insert new user
+    const [insert] = await db.query(
+      'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
+      [name, email, hashedPassword, user_photo]
+    );
+
+    if (insert.affectedRows === 0) {
+      return res.status(400).send('Failed to register user');
+    }
+
+    res.send('User registered successfully');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Error registering user');
+  }
 });
-
 // User login
 app.post('/login', async (req, res) => {
      try {
