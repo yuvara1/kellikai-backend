@@ -86,7 +86,7 @@ app.post('/register', upload.single('user_photo'), async (req, res) => {
           }
 
           // Dynamically generate the user photo URL
-          const user_photo = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+          const user_photo = `https://kellikai.onrender.com/uploads/${req.file.filename}`;
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
           if (rows.length === 0) {
@@ -124,8 +124,8 @@ app.post('/login', async (req, res) => {
                id: user.id,
                name: user.name,
                email: user.email,
-               user_photo: user.user_photo.startsWith('/uploads/')
-                    ? `${req.protocol}://${req.get('host')}${user.user_photo}`
+               user_photo: user.user_photo
+                    ? user.user_photo
                     : `${req.protocol}://${req.get('host')}/uploads/${user.user_photo}`,
           });
      } catch (err) {
