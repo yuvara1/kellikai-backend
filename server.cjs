@@ -271,7 +271,7 @@ app.get('/getallposts', async (req, res) => {
           const [rows] = await db.query(`
             SELECT 
                 post.id,
-                users.user_photo AS userprofile,
+                users.user_photo,
                 post.name,
                 post.img,
                 post.caption,
@@ -287,7 +287,7 @@ app.get('/getallposts', async (req, res) => {
           const posts = rows.map((row) => ({
                id: row.id,
                name: row.name,
-               profile: row.userprofile,
+               profile: row.user_photo,
                img: row.img,
                caption: row.caption,
                likes: row.likes,
