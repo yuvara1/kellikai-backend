@@ -4,21 +4,27 @@ const mysql = require('mysql2/promise');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const dotenv = require('dotenv');
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-
-app.use(cors());
+// Middleware
+app.use(cors({
+     origin: ['http://localhost:5173', 'https://kellikai.web.app', 'https://kellikai.onrender.com'],
+     methods: ['GET', 'POST', 'PUT', 'DELETE'],
+     allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
 // Database Connection
 const db = mysql.createPool({
-     host: 'kellikai-kellikai-03.h.aivencloud.com',
-     user: 'avnadmin',
-     port: 26379,
-     password: 'AVNS_RLdK5kJ2UBDb4vsLWYa',
-     database: 'kellikai',
+     host: process.env.DB_HOST || 'localhost',
+     user: process.env.DB_USER || 'root',
+     port: process.env.DB_PORT || 3306,
+     password: process.env.DB_PASSWORD || '',
+     database: process.env.DB_NAME || 'kellikai',
 });
 
 db.getConnection()
@@ -76,46 +82,44 @@ app.get('/', async (req, res) => {
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
           const { name, email, password } = req.body;
-          const user_photo = req.file ? `https://kellikai.onrender.com/uploads/` + req.file.filename : null; // Get the uploaded file name
+          if (!req.file) return res.status(400).send('User photo is required');
 
+          const user_photo = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+          const existingUsers = await queryDatabase('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
 
-          const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
-          if (rows.length === 0) {
-               const [insert] = await db.query(
-                    'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-                    [name, email, password, user_photo]
-               );
-               if (insert.affectedRows === 0) {
-                    res.status(400).send('Failed to register user');
-               } else {
-                    res.send('User registered successfully');
-               }
-          } else {
-               res.status(409).send('User already exists');
+          if (existingUsers.length > 0) {
+               const conflictField = existingUsers.some(user => user.email === email) ? 'Email' : 'Name';
+               return res.status(409).send(`${conflictField} already exists`);
           }
+
+          const result = await queryDatabase(
+               'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
+               [name, email, password, user_photo]
+          );
+
+          if (result.affectedRows === 0) return res.status(400).send('Failed to register user');
+          res.send('User registered successfully');
      } catch (err) {
-          console.error(err);
-          res.status(500).send('Error registering user');
+          handleError(res, err, 'Error registering user');
      }
 });
 
-// User login
+// User Login
 app.post('/login', async (req, res) => {
      try {
           const { email, password } = req.body;
+          const users = await queryDatabase('SELECT * FROM users WHERE name = ? OR email = ?', [email, email]);
 
-          // Check if the user exists
-          const [rows] = await db.query('SELECT * FROM users WHERE name = ? or email = ?', [email, email]);
-          if (rows.length === 0) {
-               return res.status(401).send('Invalid email or password');
-          }
+          if (users.length === 0) return res.status(401).send('Invalid email or password');
 
           const user = users[0];
           res.send({
                id: user.id,
                name: user.name,
                email: user.email,
-               user_photo: user.user_photo,
+               user_photo: user.user_photo.startsWith('/uploads/')
+                    ? `${req.protocol}://${req.get('host')}${user.user_photo}`
+                    : `${req.protocol}://${req.get('host')}/uploads/${user.user_photo}`,
           });
      } catch (err) {
           handleError(res, err, 'Error logging in user');
@@ -126,12 +130,16 @@ app.post('/login', async (req, res) => {
 app.post('/googlelogin', async (req, res) => {
      try {
           const { name, email, photo } = req.body;
+          const user_photo = photo.startsWith('/uploads/')
+               ? `${req.protocol}://${req.get('host')}${photo}`
+               : photo;
+
           const users = await queryDatabase('SELECT * FROM users WHERE email = ?', [email]);
 
           if (users.length === 0) {
                const result = await queryDatabase(
                     'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-                    [name, email, '', photo]
+                    [name, email, '', user_photo]
                );
 
                if (result.affectedRows === 0) return res.status(400).send('Failed to register user');
@@ -147,14 +155,17 @@ app.post('/googlelogin', async (req, res) => {
 // Facebook Login
 app.post('/facebooklogin', async (req, res) => {
      try {
-          console.log('Facebook login request body:', req.body); // Log the request body for debugging
           const { name, email, photo } = req.body;
+          const user_photo = photo.startsWith('/uploads/')
+               ? `${req.protocol}://${req.get('host')}${photo}`
+               : photo;
+
           const users = await queryDatabase('SELECT * FROM users WHERE email = ?', [email]);
 
           if (users.length === 0) {
                const result = await queryDatabase(
                     'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-                    [name, email, '', photo]
+                    [name, email, '', user_photo]
                );
 
                if (result.affectedRows === 0) return res.status(400).send('Failed to register user');
@@ -170,8 +181,8 @@ app.post('/facebooklogin', async (req, res) => {
 // Like Post
 app.post('/likepost', async (req, res) => {
      try {
-          const name = req.query.name;
-          const [rows] = await db.query('SELECT id,name, user_photo FROM users WHERE name != ?', [name]);
+          const { post_id } = req.body;
+          if (!post_id) return res.status(400).send('Post ID is required');
 
           const result = await queryDatabase('UPDATE post SET likes = likes + 1 WHERE id = ?', [post_id]);
           if (result.affectedRows === 0) return res.status(404).send('Post not found');
