@@ -5,19 +5,23 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-
 const app = express();
 const port = process.env.PORT || 3000;
 
-
-app.use(cors());
+// CORS Configuration
+app.use(cors({
+     origin: ['http://localhost:5173', 'https://kellikai.web.app', 'https://kellikai.onrender.com'],
+     methods: ['GET', 'POST', 'PUT', 'DELETE'],
+     allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
+// Database Connection
 const db = mysql.createPool({
      host: 'kellikai-kellikai-03.h.aivencloud.com',
      user: 'avnadmin',
      port: 26379,
-     password: 'AVNS_ozuBjgKP467azZQD6Y9',
+     password: 'AVNS_X67sldgYke2sOkQBVK5',
      database: 'kellikai',
 });
 
@@ -28,399 +32,172 @@ db.getConnection()
      })
      .catch((err) => {
           console.error('Error connecting to the database:', err);
+          process.exit(1);
      });
 
+// File Upload Configuration
 const uploadDir = path.join(__dirname, '/uploads');
 if (!fs.existsSync(uploadDir)) {
      fs.mkdirSync(uploadDir, { recursive: true });
 }
-
-// Serve static files from the uploads directory
 app.use('/uploads', express.static(uploadDir));
 
-// Configure multer for file uploads
 const storage = multer.diskStorage({
-     destination: (req, file, cb) => {
-          console.log('Saving to directory:', uploadDir);
-          cb(null, uploadDir);
-     },
-     filename: (req, file, cb) => {
-          const uniqueName = Date.now() + path.extname(file.originalname);
-          console.log('Generated filename:', uniqueName);
-          cb(null, uniqueName);
-     },
+     destination: (req, file, cb) => cb(null, uploadDir),
+     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
 });
 const upload = multer({ storage });
 
-// Home route
+// Helper Functions
+const queryDatabase = async (query, params) => {
+     try {
+          const [rows] = await db.query(query, params);
+          return rows;
+     } catch (err) {
+          console.error('Database query error:', err);
+          throw new Error('Database error');
+     }
+};
+
+const handleError = (res, err, message = 'An error occurred') => {
+     console.error(message, err);
+     res.status(500).send(message);
+};
+
+// Routes
+
+// Home Route
 app.get('/', async (req, res) => {
      try {
-          const [rows] = await db.query('SELECT * FROM users');
-          res.send(rows);
+          const users = await queryDatabase('SELECT * FROM users', []);
+          res.send(users);
      } catch (err) {
-          console.error(err);
-          res.status(500).send('Error retrieving data from the database');
+          handleError(res, err, 'Error retrieving users');
      }
 });
 
-// User registration
+// User Registration
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
-          console.log("Register request"+req.body);
           const { name, email, password } = req.body;
-          const user_photo = req.file ? `https://kellikai.onrender.com/uploads/` + req.file.filename : null; // Get the uploaded file name
+          if (!req.file) return res.status(400).send('User photo is required');
 
+          const user_photo = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+          const existingUsers = await queryDatabase('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
 
-          const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
-          if (rows.length === 0) {
-               const [insert] = await db.query(
-                    'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
-                    [name, email, password, user_photo]
-               );
-               if (insert.affectedRows === 0) {
-                    res.status(400).send('Failed to register user');
-               } else {
-                    res.send('User registered successfully');
-               }
-          } else {
-               res.status(409).send('User already exists');
+          if (existingUsers.length > 0) {
+               const conflictField = existingUsers.some(user => user.email === email) ? 'Email' : 'Name';
+               return res.status(409).send(`${conflictField} already exists`);
           }
+
+          const result = await queryDatabase(
+               'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
+               [name, email, password, user_photo]
+          );
+
+          if (result.affectedRows === 0) return res.status(400).send('Failed to register user');
+          res.send('User registered successfully');
      } catch (err) {
-          console.error(err);
-          res.status(500).send('Error registering user');
+          handleError(res, err, 'Error registering user');
      }
 });
 
-// User login
+// User Login
 app.post('/login', async (req, res) => {
      try {
           const { email, password } = req.body;
-          console.log('Login request body:', req.body); // Log the request body for debugging
-          // Check if the user exists
-          const [rows] = await db.query('SELECT * FROM users WHERE name = ? or email = ?', [email, email]);
-          if (rows.length === 0) {
-               return res.status(401).send('Invalid email or password');
-          }
+          const users = await queryDatabase('SELECT * FROM users WHERE name = ? OR email = ?', [email, email]);
 
-          const user = rows[0];
+          if (users.length === 0) return res.status(401).send('Invalid email or password');
 
-          // Compare the hashed password
-          console.log(user)
-
-          // Send user data (excluding sensitive information like password)
+          const user = users[0];
           res.send({
                id: user.id,
                name: user.name,
                email: user.email,
-               user_photo: user.user_photo
-                    ? user.user_photo : `https://kellikai.onrender.com/uploads/${user.user_photo}`
+               user_photo: user.user_photo,
           });
      } catch (err) {
-          console.error('Error during login:', err);
-          res.status(500).send('Error logging in user');
+          handleError(res, err, 'Error logging in user');
      }
 });
 
-// Google login
+// Google Login
 app.post('/googlelogin', async (req, res) => {
      try {
-          console.log('Google login request body:', req.body); // Log the request body for debugging
           const { name, email, photo } = req.body;
-          const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-          if (rows.length === 0) {
-               const [insert] = await db.query(
+          const users = await queryDatabase('SELECT * FROM users WHERE email = ?', [email]);
+
+          if (users.length === 0) {
+               const result = await queryDatabase(
                     'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
                     [name, email, '', photo]
                );
-               if (insert.affectedRows === 0) {
-                    res.status(400).send('Failed to register user');
-               } else {
-                    res.send('User registered successfully');
-               }
-          } else {
-               console.log('User already exists:', rows[0]);
-               console.log('users:', rows);
-               res.send(rows[0]);
+
+               if (result.affectedRows === 0) return res.status(400).send('Failed to register user');
+               return res.send('User registered successfully');
           }
+
+          res.send(users[0]);
      } catch (err) {
-          console.error(err);
-          res.status(500).send('Error during Google login');
+          handleError(res, err, 'Error during Google login');
      }
 });
 
-// Facebook login
+// Facebook Login
 app.post('/facebooklogin', async (req, res) => {
      try {
-          console.log('Facebook login request body:', req.body); // Log the request body for debugging
           const { name, email, photo } = req.body;
-          const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-          if (rows.length === 0) {
-               const [insert] = await db.query(
+          const users = await queryDatabase('SELECT * FROM users WHERE email = ?', [email]);
+
+          if (users.length === 0) {
+               const result = await queryDatabase(
                     'INSERT INTO users (name, email, password, user_photo) VALUES (?, ?, ?, ?)',
                     [name, email, '', photo]
                );
-               if (insert.affectedRows === 0) {
-                    res.status(400).send('Failed to register user');
-               } else {
-                    res.send('New user created successfully');
-               }
-          } else {
-               res.send(rows);
+
+               if (result.affectedRows === 0) return res.status(400).send('Failed to register user');
+               return res.send('New user created successfully');
           }
+
+          res.send(users[0]);
      } catch (err) {
-          console.error(err);
-          res.status(500).send('Error during Facebook login');
+          handleError(res, err, 'Error during Facebook login');
      }
 });
 
-//upload a post
-app.post('/uploadpost', upload.single('image'), async (req, res) => {
-     try {
-          console.log('Request body:', req.body); // Log the request body for debugging
-          console.log('Uploaded file:', req.file.filename); // Log the uploaded file for debugging
-          const { name, caption } = req.body;
-          const image = `https://kellikai.onrender.com/uploads/${req.file.filename}`; // Get the uploaded file name 
-          console.log('Image URL:', image); // Log the image URL for debugging
-          console.log('Image file:', image); // Log the image file name    
-          const query = 'INSERT INTO post (name, img, caption) VALUES (?, ?, ?)';
-          const [rows] = await db.query(query, [name, image, caption]);
-
-          if (rows.affectedRows === 0) {
-               res.status(400).send('Failed to create post');
-          } else {
-               res.send('Post created successfully');
-          }
-     } catch (err) {
-          console.error(err);
-          res.status(500).send('Error creating post');
-     }
-});
-
-// Get all users
-app.get('/getallusers', async (req, res) => {
-     try {
-          console.log('Request query:', req.query); // Log the request query for debugging
-          const name = req.query.name;
-          const [rows] = await db.query('SELECT id,name, user_photo FROM users WHERE name != ?', [name]);
-
-          const users = rows.map((row) => ({
-               id: row.id,
-               name: row.name,
-               user_photo: row.user_photo
-                    ? row.user_photo : `https://kellikai.onrender.com/uploads/${row.user_photo}`,
-
-          }));
-
-          res.send(users);
-     } catch (err) {
-          console.error(err);
-          res.status(500).send('Error retrieving users');
-     }
-});
-
-// Serve uploaded files
-app.get('/uploads/:filename', (req, res) => {
-     const { filename } = req.params;
-     const filePath =  `https://kellikai.onrender.com/uploads/`+filename;
-     console.log('File path:', filePath); // Log the file path for debugging
-     fs.readFile(filePath, (err, data) => {
-          if (err) {
-               res.status(500).send('Error reading file');
-          } else {
-               res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-               res.end(data);
-          }
-     });
-});
-
-app.get('/profilePic', async (req, res) => {
-     try {
-          const name = req.query.name;
-          const [rows] = await db.query('SELECT user_photo FROM users WHERE name = ?', [name]);
-          if (rows.length > 0) {
-               const userPhoto = rows[0].user_photo ? rows[0].user_photo : `https://kellikai.onrender.com/uploads/${rows[0].user_photo}`;
-               res.send(userPhoto);
-               console.log('User photo URL:', userPhoto); // Log the user photo URL for debugging
-          } else {
-               res.status(404).send('User not found');
-          }
-     } catch (err) {
-          console.error(err);
-          res.status(500).send('Error retrieving profile picture');
-     }
-}
-);
-
-// Retrieve all posts
-app.get('/getallposts', async (req, res) => {
-     try {
-          const [rows] = await db.query(`
-     SELECT 
-    post.id,
-    users.user_photo AS userprofile,
-    post.name,
-    post.img,
-    post.caption,
-    post.likes
-FROM 
-    post
-JOIN 
-    users ON post.name = users.name
-ORDER BY 
-    post.priority DESC;
-
-
-               `);
-
-          const posts = rows.map((row) => ({
-               id: row.id,
-               name: row.name,
-               profile: row.userprofile,
-               img: row.img,
-               caption: row.caption,
-               likes: row.likes,
-          }));
-          console.log('Posts:', posts); // Log the posts for debugging
-
-          res.send(posts);
-     } catch (err) {
-          console.error(err);
-          res.status(500).send('Error retrieving posts');
-     }
-});
-
-app.get('/followings', async (req, res) => {
-     try {
-          const followerId = req.query.follower_id;
-
-          if (!followerId) {
-               return res.status(400).send('Follower ID is required');
-          }
-
-          const [rows] = await db.query(`
-            SELECT 
-                u.id,
-                u.name,
-                u.user_photo
-            FROM 
-                followings f
-            JOIN 
-                users u ON f.followed_id = u.id
-            WHERE 
-                f.follower_id = ?;
-          `, [followerId]);
-
-          const followings = rows.map((row) => ({
-               id: row.id,
-               name: row.name,
-               user_photo: row.user_photo,
-          }));
-
-          res.send(followings);
-     } catch (err) {
-          console.error('Error retrieving followings:', err);
-          res.status(500).send('Error retrieving followings');
-     }
-});
-
-app.delete('/unfollow', async (req, res) => {
-     try {
-          const { follower_id, following_id } = req.query; // Get the follower and following IDs from the query parameters
-          console.log('Follower ID:', follower_id); // Log the follower ID for debugging
-          console.log('Following ID:', following_id); // Log the following ID for debugging
-
-          if (!follower_id || !following_id) {
-               return res.status(400).send('Follower ID and Following ID are required');
-          }
-
-          const [result] = await db.query(
-               'DELETE FROM followings WHERE follower_id = ? AND followed_id = ?',
-               [follower_id, following_id]
-          );
-
-          if (result.affectedRows === 0) {
-               return res.status(404).send('No such following found');
-          }
-
-          res.send('User unfollowed successfully');
-     } catch (err) {
-          console.error('Error unfollowing user:', err);
-          res.status(500).send('Error unfollowing user');
-     }
-}
-);
-
-
-app.post('/followuser', async (req, res) => {
-     try {
-          console.log('Request body:', req.body); // Log the request body for debugging
-          const { follower_id, followed_id } = req.body;
-
-          if (!follower_id || !followed_id) {
-               console.error('Missing follower_id or followed_id in the request body');
-               return res.status(400).send('Follower ID and Followed ID are required');
-          }
-
-
-          console.log('Follower ID:', follower_id); // Log the follower ID for debugging
-          console.log('Followed ID:', followed_id); // Log the followed ID for debugging
-
-          // Check if the user is already followed
-          const [existingFollow] = await db.query(
-               'SELECT * FROM followings WHERE follower_id = ? AND followed_id = ?',
-               [follower_id, followed_id]
-          );
-
-          if (existingFollow.length > 0) {
-               console.log('User is already followed');
-               return res.status(409).send('Already following this user');
-          }
-
-          // Insert the new follow relationship
-          const [result] = await db.query(
-               'INSERT INTO followings (follower_id, followed_id) VALUES (?, ?)',
-               [follower_id, followed_id]
-          );
-
-          if (result.affectedRows === 0) {
-               console.error('Failed to insert follow relationship into the database');
-               return res.status(400).send('Failed to follow user');
-          }
-
-          console.log('Follow relationship added successfully');
-          res.send('User followed successfully');
-     } catch (err) {
-          console.error('Error following user:', err);
-          res.status(500).send('Error following user');
-     }
-});
-
+// Like Post
 app.post('/likepost', async (req, res) => {
      try {
           const { post_id } = req.body;
+          if (!post_id) return res.status(400).send('Post ID is required');
 
-          if (!post_id) {
-               return res.status(400).send('Post ID is required');
-          }
-
-          // Increment the likes for the post
-          const [result] = await db.query(
-               'UPDATE post SET likes = likes + 1 WHERE id = ?',
-               [post_id]
-          );
-
-          if (result.affectedRows === 0) {
-               return res.status(404).send('Post not found');
-          }
+          const result = await queryDatabase('UPDATE post SET likes = likes + 1 WHERE id = ?', [post_id]);
+          if (result.affectedRows === 0) return res.status(404).send('Post not found');
 
           res.send('Post liked successfully');
      } catch (err) {
-          console.error('Error liking post:', err);
-          res.status(500).send('Error liking post');
+          handleError(res, err, 'Error liking post');
      }
 });
 
-// Start the server
+// Serve Uploaded Files
+app.get('/uploads/:filename', (req, res) => {
+     const { filename } = req.params;
+     const filePath = path.join(uploadDir, filename);
+
+     fs.readFile(filePath, (err, data) => {
+          if (err) {
+               if (err.code === 'ENOENT') return res.status(404).send('File not found');
+               return res.status(500).send('Error reading file');
+          }
+
+          res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+          res.end(data);
+     });
+});
+
+// Start Server
 app.listen(port, () => {
      console.log(`Server is running on port ${port}`);
 });
