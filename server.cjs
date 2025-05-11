@@ -76,7 +76,7 @@ app.post('/register', upload.single('user_photo'), async (req, res) => {
             return res.status(400).send('User photo is required');
         }
 
-        const user_photo = req.file.filename; // Get the uploaded file name
+          const user_photo = `https://kellikai.onrender.com/uploads/${req.file.filename}`; // Get the uploaded file name
 
         // Check for duplicate email or name
         const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
