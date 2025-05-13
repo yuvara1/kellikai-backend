@@ -1,16 +1,20 @@
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const dotenv = require('dotenv');
+const multer = require('multer');
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = 3000;
 
 // Middleware
+app.use((req, res, next) => {
+     res.header('Access-Control-Allow-Origin', '*');
+     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+     next();
+});
+
 const server = process.env.SERVER;
 if (server === 'true') {
      app.use((req, res, next) => {
@@ -21,18 +25,21 @@ if (server === 'true') {
 }
 
 app.use(cors({
-     origin: ['http://localhost:5173', 'https://kellikai.web.app', 'https://kellikai.onrender.com'],
-     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-     allowedHeaders: ['Content-Type', 'Authorization'],
+     origin: 'http://localhost:5173',
+     credentials: true,
 }));
+
 app.use(express.json());
 
 const db = mysql.createPool({
      host: 'kellikai-kellikai-03.h.aivencloud.com',
-     user: 'avnadmin',
-     port: 26379,
-     password: 'AVNS_X67sldgYke2sOkQBVK5',
-     database: 'kellikai',
+     user: process.env.DB_USER,
+     port: process.env.DB_PORT,
+     password: process.env.DB_PASSWORD,
+     database: process.env.DB_NAME,
+     connectionLimit: 10,
+     waitForConnections: true,
+
 });
 
 db.getConnection()
@@ -45,22 +52,9 @@ db.getConnection()
           process.exit(1);
      });
 
-const uploadDir = path.join(__dirname, '/uploads');
-if (!fs.existsSync(uploadDir)) {
-     fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Use memory storage to store files in memory as buffers
+const storage = multer.memoryStorage();
 
-app.use('/uploads', express.static(uploadDir));
-
-const storage = multer.diskStorage({
-     destination: (req, file, cb) => {
-          cb(null, uploadDir);
-     },
-     filename: (req, file, cb) => {
-          const uniqueName = Date.now() + path.extname(file.originalname);
-          cb(null, uniqueName);
-     },
-});
 const upload = multer({ storage });
 
 // Home route
@@ -77,16 +71,17 @@ app.get('/', async (req, res) => {
 // User registration
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
-          console.log("Register request:", req.body);
-
           const { name, email, password } = req.body;
 
           if (!req.file) {
                return res.status(400).send('User photo is required');
           }
 
-          // Dynamically generate the user photo URL
-          const user_photo = `https://kellikai.onrender.com/uploads/${req.file.filename}`;
+          // Log the uploaded file details
+          console.log('Uploaded file:', req.file);
+
+          // Read the file as binary data
+          const user_photo = req.file.buffer;
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
           if (rows.length === 0) {
@@ -126,7 +121,7 @@ app.post('/login', async (req, res) => {
                email: user.email,
                user_photo: user.user_photo
                     ? user.user_photo
-                    : `https://kellikai.onrender.com/uploads/${user.user_photo}`,
+                    : `${server}/uploads/${user.user_photo}`,
           });
      } catch (err) {
           console.error('Error during login:', err);
@@ -193,14 +188,16 @@ app.post('/facebooklogin', async (req, res) => {
 // Upload a post
 app.post('/uploadpost', upload.single('image'), async (req, res) => {
      try {
-          console.log('Request body:', req.body);
-          console.log('Uploaded file:', req.file.filename);
           const { name, caption } = req.body;
-          const image = `https://kellikai.onrender.com/uploads/${req.file.filename}`;
-          console.log('Image URL:', image);
-          console.log('Image file:', image);
-          const query = 'INSERT INTO post (name, img, caption) VALUES (?, ?, ?)';
-          const [rows] = await db.query(query, [name, image, caption]);
+          if (!req.file) {
+               return res.status(400).send('Image is required');
+          }
+          // Convert buffer to base64 string
+          const base64Image = req.file.buffer.toString('base64');
+          const mimetype = req.file.mimetype;
+
+          const query = 'INSERT INTO post (name, img, mimetype, caption) VALUES (?, ?, ?, ?)';
+          const [rows] = await db.query(query, [name, base64Image, mimetype, caption]);
 
           if (rows.affectedRows === 0) {
                res.status(400).send('Failed to create post');
@@ -208,11 +205,10 @@ app.post('/uploadpost', upload.single('image'), async (req, res) => {
                res.send('Post created successfully');
           }
      } catch (err) {
-          console.error(err);
+          console.error('Error creating post:', err);
           res.status(500).send('Error creating post');
      }
 });
-
 // Get all users
 app.get('/getallusers', async (req, res) => {
      try {
@@ -236,7 +232,7 @@ app.get('/getallusers', async (req, res) => {
 // Serve uploaded files
 app.get('/uploads/:filename', (req, res) => {
      const { filename } = req.params;
-     const filePath = `https://kellikai.onrender.com/uploads/` + filename;
+     const filePath = `${server}` + filename;
      console.log('File path:', filePath);
      fs.readFile(filePath, (err, data) => {
           if (err) {
@@ -254,13 +250,19 @@ app.get('/profilePic', async (req, res) => {
           const [rows] = await db.query('SELECT user_photo FROM users WHERE name = ?', [name]);
           if (rows.length > 0) {
                const userPhoto = rows[0].user_photo;
-               res.send(userPhoto);
-               console.log('User photo URL:', userPhoto);
+
+               if (!userPhoto) {
+                    return res.status(404).send('User photo not found');
+               }
+
+               // Convert the binary data to a Base64 string
+               const base64Photo = `data:image/jpeg;base64,${userPhoto.toString('base64')}`;
+               res.send(base64Photo);
           } else {
                res.status(404).send('User not found');
           }
      } catch (err) {
-          console.error(err);
+          console.error('Error retrieving profile picture:', err);
           res.status(500).send('Error retrieving profile picture');
      }
 });
@@ -269,38 +271,37 @@ app.get('/profilePic', async (req, res) => {
 app.get('/getallposts', async (req, res) => {
      try {
           const [rows] = await db.query(`
-            SELECT 
-                post.id,
-                users.user_photo,
-                post.name,
-                post.img,
-                post.caption,
-                post.likes
-            FROM 
-                post
-            JOIN 
-                users ON post.name = users.name
-            ORDER BY 
-                post.priority DESC;
-        `);
+             SELECT 
+                 post.id,
+                 users.user_photo,
+                 post.name,
+                 post.img,
+                 post.mimetype,
+                 post.caption,
+                 post.likes
+             FROM 
+                 post
+             JOIN 
+                 users ON post.name = users.name
+             ORDER BY 
+                 post.priority DESC;
+         `);
 
           const posts = rows.map((row) => ({
                id: row.id,
                name: row.name,
                profile: row.user_photo,
-               img: row.img,
+               img: row.img && row.mimetype ? `data:${row.mimetype};base64,${row.img}` : null,
                caption: row.caption,
                likes: row.likes,
           }));
-          console.log('Posts:', posts);
 
           res.send(posts);
      } catch (err) {
-          console.error(err);
+          console.error('Error retrieving posts:', err);
           res.status(500).send('Error retrieving posts');
      }
 });
-
 app.get('/followings', async (req, res) => {
      try {
           const followerId = req.query.follower_id;
@@ -403,48 +404,52 @@ app.post('/followuser', async (req, res) => {
 });
 
 app.post('/likepost', async (req, res) => {
-    try {
-        const { post_id, user_id } = req.body;
+     try {
+          const { post_id } = req.body;
 
-        if (!post_id || !user_id) {
-            return res.status(400).send('Post ID and User ID are required');
-        }
+          if (!post_id) {
+               return res.status(400).send('Post ID is required');
+          }
 
-        // Check if the user has already liked the post
-        const [existingLike] = await db.query(
-            'SELECT * FROM post_likes WHERE post_id = ? AND user_id = ?',
-            [post_id, user_id]
-        );
+          const [result] = await db.query(
+               'UPDATE post SET likes = likes + 1 WHERE id = ?',
+               [post_id]
+          );
 
-        if (existingLike.length > 0) {
-            return res.status(409).send('User has already liked this post');
-        }
+          if (result.affectedRows === 0) {
+               return res.status(404).send('Post not found');
+          }
 
-        // Insert the like into the post_likes table
-        const [likeResult] = await db.query(
-            'INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)',
-            [post_id, user_id]
-        );
+          res.send('Post liked successfully');
+     } catch (err) {
+          console.error('Error liking post:', err);
+          res.status(500).send('Error liking post');
+     }
+});
 
-        if (likeResult.affectedRows === 0) {
-            return res.status(400).send('Failed to like the post');
-        }
+app.get('/getimage/:id', async (req, res) => {
+     try {
+          const { id } = req.params;
 
-        // Increment the likes count in the post table
-        const [updateResult] = await db.query(
-            'UPDATE post SET likes = likes + 1 WHERE id = ?',
-            [post_id]
-        );
+          const [rows] = await db.query('SELECT img FROM post WHERE id = ?', [id]);
 
-        if (updateResult.affectedRows === 0) {
-            return res.status(404).send('Post not found');
-        }
+          if (rows.length === 0) {
+               return res.status(404).send('Image not found');
+          }
 
-        res.send('Post liked successfully');
-    } catch (err) {
-        console.error('Error liking post:', err);
-        res.status(500).send('Error liking post');
-    }
+          const imageBuffer = rows[0].img;
+
+          if (!imageBuffer) {
+               return res.status(404).send('Image not found');
+          }
+
+          // Convert the binary data to a Base64 string
+          const base64Image = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
+          res.send(base64Image);
+     } catch (err) {
+          console.error('Error retrieving image:', err);
+          res.status(500).send('Error retrieving image');
+     }
 });
 app.listen(port, () => {
      console.log(`Server is running on port ${port}`);
