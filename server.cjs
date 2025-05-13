@@ -3,6 +3,7 @@ const cors = require('cors');
 const mysql = require('mysql2/promise');
 const dotenv = require('dotenv');
 const multer = require('multer');
+const axios = require('axios'); // Make sure axios is required at the top
 dotenv.config();
 
 const app = express();
@@ -25,7 +26,7 @@ if (server === 'true') {
 }
 
 app.use(cors({
-     origin: ['http://localhost:5173','https://kellikai.web.app'],
+     origin: ['http://localhost:5173', 'https://kellikai.web.app'],
      methods: ['GET', 'POST', 'PUT', 'DELETE'],
      credentials: true,
 }));
@@ -69,20 +70,14 @@ app.get('/', async (req, res) => {
      }
 });
 
-// User registration
+// Registration
 app.post('/register', upload.single('user_photo'), async (req, res) => {
      try {
           const { name, email, password } = req.body;
-
           if (!req.file) {
                return res.status(400).send('User photo is required');
           }
-
-          // Log the uploaded file details
-          console.log('Uploaded file:', req.file);
-
-          // Read the file as binary data
-          const user_photo = req.file.buffer;
+          const user_photo = req.file.buffer; // Buffer for LONGBLOB
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ? OR name = ?', [email, name]);
           if (rows.length === 0) {
@@ -121,8 +116,8 @@ app.post('/login', async (req, res) => {
                name: user.name,
                email: user.email,
                user_photo: user.user_photo
-                    ? user.user_photo
-                    : `${server}/uploads/${user.user_photo}`,
+                    ? `data:image/jpeg;base64,${Buffer.from(user.user_photo).toString('base64')}`
+                    : null,
           });
      } catch (err) {
           console.error('Error during login:', err);
@@ -136,7 +131,12 @@ app.post('/googlelogin', async (req, res) => {
           console.log('Google login request body:', req.body);
           const { name, email, photo } = req.body;
 
-          const user_photo = photo
+          // Download the image from the photo URL and convert to buffer
+          let user_photo = null;
+          if (photo) {
+               const response = await axios.get(photo, { responseType: 'arraybuffer' });
+               user_photo = Buffer.from(response.data, 'binary');
+          }
 
           const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
           if (rows.length === 0) {
@@ -147,7 +147,9 @@ app.post('/googlelogin', async (req, res) => {
                if (insert.affectedRows === 0) {
                     res.status(400).send('Failed to register user');
                } else {
-                    res.send('User registered successfully');
+                    // Return the new user info
+                    const [newUserRows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+                    res.send(newUserRows[0]);
                }
           } else {
                res.send(rows[0]);
@@ -213,16 +215,15 @@ app.post('/uploadpost', upload.single('image'), async (req, res) => {
 // Get all users
 app.get('/getallusers', async (req, res) => {
      try {
-          console.log('Request query:', req.query);
           const name = req.query.name;
           const [rows] = await db.query('SELECT id, name, user_photo FROM users WHERE name != ?', [name]);
-
           const users = rows.map((row) => ({
                id: row.id,
                name: row.name,
-               user_photo: row.user_photo,
+               user_photo: row.user_photo
+                    ? `data:image/jpeg;base64,${Buffer.from(row.user_photo).toString('base64')}`
+                    : null,
           }));
-
           res.send(users);
      } catch (err) {
           console.error(err);
@@ -251,12 +252,10 @@ app.get('/profilePic', async (req, res) => {
           const [rows] = await db.query('SELECT user_photo FROM users WHERE name = ?', [name]);
           if (rows.length > 0) {
                const userPhoto = rows[0].user_photo;
-
                if (!userPhoto) {
                     return res.status(404).send('User photo not found');
                }
-
-               // Convert the binary data to a Base64 string
+               // Convert binary to base64 Data URL
                const base64Photo = `data:image/jpeg;base64,${userPhoto.toString('base64')}`;
                res.send(base64Photo);
           } else {
@@ -291,7 +290,9 @@ app.get('/getallposts', async (req, res) => {
           const posts = rows.map((row) => ({
                id: row.id,
                name: row.name,
-               profile: row.user_photo,
+               profile: row.user_photo
+                    ? `data:image/jpeg;base64,${Buffer.from(row.user_photo).toString('base64')}`
+                    : null,
                img: row.img && row.mimetype ? `data:${row.mimetype};base64,${row.img}` : null,
                caption: row.caption,
                likes: row.likes,
@@ -327,7 +328,9 @@ app.get('/followings', async (req, res) => {
           const followings = rows.map((row) => ({
                id: row.id,
                name: row.name,
-               user_photo: row.user_photo,
+               user_photo: row.user_photo
+                    ? `data:image/jpeg;base64,${Buffer.from(row.user_photo).toString('base64')}`
+                    : null,
           }));
 
           res.send(followings);
