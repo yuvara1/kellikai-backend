@@ -3,7 +3,7 @@ const cors = require('cors');
 const mysql = require('mysql2/promise');
 const dotenv = require('dotenv');
 const multer = require('multer');
-const axios = require('axios'); // Make sure axios is required at the top
+const axios = require('axios');
 dotenv.config();
 
 const app = express();
@@ -270,22 +270,46 @@ app.get('/profilePic', async (req, res) => {
 // Retrieve all posts
 app.get('/getallposts', async (req, res) => {
      try {
+          const user_id = req.query.user_id; // Get user_id from query
+          const page = parseInt(req.query.page) || 1;
+          const limit = parseInt(req.query.limit) || 2;
+          const offset = (page - 1) * limit;
+
+          // Get total count for frontend
+          const [[{ count }]] = await db.query(`
+            SELECT COUNT(*) as count
+            FROM post
+            JOIN users ON post.name = users.name
+        `);
+
+          // Get paginated posts
           const [rows] = await db.query(`
-             SELECT 
-                 post.id,
-                 users.user_photo,
-                 post.name,
-                 post.img,
-                 post.mimetype,
-                 post.caption,
-                 post.likes
-             FROM 
-                 post
-             JOIN 
-                 users ON post.name = users.name
-             ORDER BY 
-                 post.priority DESC;
-         `);
+            SELECT 
+                post.id,
+                users.user_photo,
+                post.name,
+                post.img,
+                post.mimetype,
+                post.caption,
+                post.likes
+            FROM 
+                post
+            JOIN 
+                users ON post.name = users.name
+            ORDER BY 
+                post.priority DESC
+            LIMIT ? OFFSET ?;
+        `, [limit, offset]);
+
+          // Get liked post ids for this user
+          let likedPosts = [];
+          if (user_id) {
+               const [likedRows] = await db.query(
+                    'SELECT post_id FROM post_likes WHERE user_id = ?',
+                    [user_id]
+               );
+               likedPosts = likedRows.map(row => row.post_id);
+          }
 
           const posts = rows.map((row) => ({
                id: row.id,
@@ -296,9 +320,15 @@ app.get('/getallposts', async (req, res) => {
                img: row.img && row.mimetype ? `data:${row.mimetype};base64,${row.img}` : null,
                caption: row.caption,
                likes: row.likes,
+               liked: user_id ? likedPosts.includes(row.id) : false
           }));
 
-          res.send(posts);
+          res.send({
+               posts,
+               total: count,
+               page,
+               limit
+          });
      } catch (err) {
           console.error('Error retrieving posts:', err);
           res.status(500).send('Error retrieving posts');
@@ -409,12 +439,28 @@ app.post('/followuser', async (req, res) => {
 
 app.post('/likepost', async (req, res) => {
      try {
-          const { post_id } = req.body;
+          const { post_id, user_id } = req.body;
 
-          if (!post_id) {
-               return res.status(400).send('Post ID is required');
+          if (!post_id || !user_id) {
+               return res.status(400).send('Post ID and User ID are required');
           }
 
+          // Check if the user already liked the post
+          const [existing] = await db.query(
+               'SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?',
+               [post_id, user_id]
+          );
+          if (existing.length > 0) {
+               return res.status(409).send('User already liked this post');
+          }
+
+          // Insert into post_likes
+          await db.query(
+               'INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)',
+               [post_id, user_id]
+          );
+
+          // Increment the like count
           const [result] = await db.query(
                'UPDATE post SET likes = likes + 1 WHERE id = ?',
                [post_id]
@@ -428,6 +474,42 @@ app.post('/likepost', async (req, res) => {
      } catch (err) {
           console.error('Error liking post:', err);
           res.status(500).send('Error liking post');
+     }
+});
+
+app.post('/unlikepost', async (req, res) => {
+     try {
+          const { post_id, user_id } = req.body;
+
+          if (!post_id || !user_id) {
+               return res.status(400).send('Post ID and User ID are required');
+          }
+
+          // Check if the user has liked the post
+          const [existing] = await db.query(
+               'SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?',
+               [post_id, user_id]
+          );
+          if (existing.length === 0) {
+               return res.status(409).send('User has not liked this post');
+          }
+
+          // Remove from post_likes
+          await db.query(
+               'DELETE FROM post_likes WHERE post_id = ? AND user_id = ?',
+               [post_id, user_id]
+          );
+
+          // Decrement the like count (but not below zero)
+          await db.query(
+               'UPDATE post SET likes = GREATEST(likes - 1, 0) WHERE id = ?',
+               [post_id]
+          );
+
+          res.send('Post unliked successfully');
+     } catch (err) {
+          console.error('Error unliking post:', err);
+          res.status(500).send('Error unliking post');
      }
 });
 
