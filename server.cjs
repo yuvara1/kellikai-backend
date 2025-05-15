@@ -270,17 +270,16 @@ app.get('/profilePic', async (req, res) => {
 // Retrieve all posts
 app.get('/getallposts', async (req, res) => {
      try {
-          const user_id = req.query.user_id; // Get user_id from query
-          const page = parseInt(req.query.page) || 1;
-          const limit = parseInt(req.query.limit) || 2;
-          const offset = (page - 1) * limit;
+          const user_id = req.query.user_id;
+          const limit = parseInt(req.query.limit) || 5;
+          const offset = parseInt(req.query.offset) || 0;
 
           // Get total count for frontend
           const [[{ count }]] = await db.query(`
             SELECT COUNT(*) as count
             FROM post
             JOIN users ON post.name = users.name
-        `);
+          `);
 
           // Get paginated posts
           const [rows] = await db.query(`
@@ -298,8 +297,8 @@ app.get('/getallposts', async (req, res) => {
                 users ON post.name = users.name
             ORDER BY 
                 post.priority DESC
-            LIMIT ? OFFSET ?;
-        `, [limit, offset]);
+            LIMIT ? OFFSET ?
+          `, [limit, offset]);
 
           // Get liked post ids for this user
           let likedPosts = [];
@@ -325,9 +324,7 @@ app.get('/getallposts', async (req, res) => {
 
           res.send({
                posts,
-               total: count,
-               page,
-               limit
+               total: count
           });
      } catch (err) {
           console.error('Error retrieving posts:', err);
