@@ -34,14 +34,11 @@ app.use(cors({
 app.use(express.json());
 
 const db = mysql.createPool({
-     host: 'kellikai-kellikai-03.h.aivencloud.com',
+     host: process.env.DB_HOST, // <-- use env variable here
      user: process.env.DB_USER,
      port: process.env.DB_PORT,
      password: process.env.DB_PASSWORD,
      database: process.env.DB_NAME,
-     connectionLimit: 10,
-     waitForConnections: true,
-
 });
 
 db.getConnection()
